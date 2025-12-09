@@ -1,0 +1,56 @@
+---
+- name: Completely uninstall RKE2 from all nodes
+  hosts: all
+  become: yes
+
+  tasks:
+
+    - name: Stop rke2-server service if exists
+      systemd:
+        name: rke2-server
+        state: stopped
+      ignore_errors: true
+
+    - name: Stop rke2-agent service if exists
+      systemd:
+        name: rke2-agent
+        state: stopped
+      ignore_errors: true
+
+    - name: Run RKE2 server uninstall script if exists
+      command: /usr/local/bin/rke2-uninstall.sh
+      ignore_errors: true
+
+    - name: Run RKE2 agent uninstall script if exists
+      command: /usr/local/bin/rke2-agent-uninstall.sh
+      ignore_errors: true
+
+    - name: Remove RKE2 directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher
+        - /var/lib/rancher
+        - /var/lib/kubelet
+        - /usr/local/lib/rancher
+        - /etc/systemd/system/rke2-server.service
+        - /etc/systemd/system/rke2-agent.service
+        - /etc/rancher/rke2
+      ignore_errors: true
+
+    - name: Remove leftover binaries
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/local/bin/rke2
+        - /usr/local/bin/rke2-server
+        - /usr/local/bin/rke2-agent
+        - /usr/local/bin/kubectl
+        - /usr/local/bin/kubelet
+      ignore_errors: true
+
+    - name: Reload systemd daemon
+      command: systemctl daemon-reload
+      ignore_errors: true

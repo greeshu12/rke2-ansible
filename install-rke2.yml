@@ -1,0 +1,101 @@
+---
+###########################################################
+# RKE2 SERVER INSTALLATION (MASTER)
+###########################################################
+- name: Install RKE2 server
+  hosts: master
+  become: yes
+  vars:
+    rke2_version: v1.27.10+rke2r1
+
+  tasks:
+
+    - name: Download RKE2 installer
+      get_url:
+        url: https://get.rke2.io
+        dest: /tmp/install.sh
+        mode: "0755"
+
+    - name: Install RKE2 server
+      command: sh /tmp/install.sh
+      environment:
+        INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+        INSTALL_RKE2_TYPE: "server"
+
+    - name: Enable + start RKE2 server
+      systemd:
+        name: rke2-server
+        enabled: yes
+        state: started
+
+    - name: Wait for master to restart
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    - name: Wait for node-token to appear
+      wait_for:
+        path: /var/lib/rancher/rke2/server/node-token
+        timeout: 60
+
+    - name: Read node token
+      slurp:
+        src: /var/lib/rancher/rke2/server/node-token
+      register: raw_token
+
+    - name: Save join token
+      set_fact:
+        rke2_join_token: "{{ raw_token.content | b64decode }}"
+
+    - name: Configure kubectl for master
+      copy:
+        src: /etc/rancher/rke2/rke2.yaml
+        dest: "/home/{{ ansible_user }}/.kube/config"
+        remote_src: yes
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
+
+###########################################################
+# RKE2 AGENT INSTALLATION (WORKER)
+###########################################################
+- name: Install RKE2 agent
+  hosts: worker
+  become: yes
+  vars:
+    rke2_version: v1.27.10+rke2r1
+
+  tasks:
+
+    - name: Download RKE2 installer
+      get_url:
+        url: https://get.rke2.io
+        dest: /tmp/install.sh
+        mode: "0755"
+
+    - name: Create RKE2 config directory
+      file:
+        path: /etc/rancher/rke2
+        state: directory
+        mode: "0755"
+
+    - name: Create RKE2 agent config
+      copy:
+        dest: /etc/rancher/rke2/config.yaml
+        content: |
+          server: https://{{ hostvars['master1'].ansible_host }}:9345
+          token: {{ hostvars['master1'].rke2_join_token }}
+        mode: "0644"
+
+    - name: Install RKE2 agent
+      command: sh /tmp/install.sh
+      environment:
+        INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+        INSTALL_RKE2_TYPE: "agent"
+
+    - name: Enable + start RKE2 agent
+      systemd:
+        name: rke2-agent
+        enabled: yes
+        state: started
