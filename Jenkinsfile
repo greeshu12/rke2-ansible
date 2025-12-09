@@ -3,10 +3,6 @@ pipeline {
 
     environment {
         ANSIBLE_HOST_KEY_CHECKING = 'False'
-        ANSIBLE_CONFIG = "${WORKSPACE}/ansible.cfg"
-
-        SSH_USER = "vboxuser"
-        MASTER_IP = "10.91.9.235"
     }
 
     stages {
@@ -25,8 +21,7 @@ pipeline {
                     inventory: 'inventory.ini',
                     credentialsId: 'ansible-ssh-key',
                     become: true,
-                    becomeUser: 'root',
-                    sshUser: 'vboxuser'
+                    sudoUser: 'root'
                 )
             }
         }
@@ -38,8 +33,7 @@ pipeline {
                     inventory: 'inventory.ini',
                     credentialsId: 'ansible-ssh-key',
                     become: true,
-                    becomeUser: 'root',
-                    sshUser: 'vboxuser'
+                    sudoUser: 'root'
                 )
             }
         }
@@ -47,34 +41,31 @@ pipeline {
         stage('Wait For Nodes Ready') {
             steps {
                 sh '''
-                    echo "⏳ Waiting for Kubernetes nodes to be Ready..."
+                    echo "⏳ Waiting for nodes to be Ready..."
 
-                    MAX_RETRIES=18   # 3 minutes
+                    MAX_RETRIES=18
                     RETRY=0
 
                     while [ $RETRY -lt $MAX_RETRIES ]; do
 
-                        STATUS=$(ssh -o StrictHostKeyChecking=no ${SSH_USER}@${MASTER_IP} \
-                            "KUBECONFIG=/home/${SSH_USER}/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes --no-headers" \
-                            | awk '{print $2}' | grep -cv Ready)
+                        STATUS=$(ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
+                          "KUBECONFIG=/home/vboxuser/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes --no-headers" \
+                          | awk '{print $2}' | grep -cv Ready)
 
                         if [ "$STATUS" -eq 0 ]; then
-                            echo " "
-                            echo "🎉🎉🎉 ALL NODES ARE READY! 🎉🎉🎉"
-                            echo "--------------------------------------------------------"
-                            echo "📌 FINAL CLUSTER STATE:"
-                            ssh -o StrictHostKeyChecking=no ${SSH_USER}@${MASTER_IP} \
-                                "KUBECONFIG=/home/${SSH_USER}/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes -o wide"
-                            echo "--------------------------------------------------------"
+                            echo "✅ All nodes are Ready!"
+                            ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
+                              "KUBECONFIG=/home/vboxuser/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes -o wide"
                             exit 0
                         fi
 
-                        echo "⏳ Nodes not ready yet... ($RETRY/18). Retrying in 10 seconds..."
+                        echo "⏳ Nodes not ready yet... waiting..."
                         sleep 10
-                        RETRY=$((RETRY + 1))
+                        RETRY=$((RETRY+1))
+
                     done
 
-                    echo "❌ ERROR: Nodes did NOT become Ready in time!"
+                    echo "❌ Nodes did not become ready within 3 minutes!"
                     exit 1
                 '''
             }
