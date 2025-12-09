@@ -75,8 +75,8 @@
       copy:
         dest: /etc/rancher/rke2/config.yaml
         content: |
-          server: https://{{ hostvars['master1'].ansible_host }}:9345
-          token: {{ hostvars['master1'].rke2_join_token }}
+          server: https://{{ hostvars[groups['master'][0]].ansible_host }}:9345
+          token: {{ hostvars[groups['master'][0]].rke2_join_token }}
         mode: "0644"
 
     - name: Install RKE2 agent
