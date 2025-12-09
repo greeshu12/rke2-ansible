@@ -43,29 +43,28 @@ pipeline {
                 sh '''
                     echo "⏳ Waiting for nodes to be Ready..."
 
-                    MAX_RETRIES=18
+                    MAX_RETRIES=18     # 3 minutes
                     RETRY=0
 
                     while [ $RETRY -lt $MAX_RETRIES ]; do
 
-                        STATUS=$(ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
+                        READY_CHECK=$(ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
                           "KUBECONFIG=/home/vboxuser/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes --no-headers" \
                           | awk '{print $2}' | grep -cv Ready)
 
-                        if [ "$STATUS" -eq 0 ]; then
+                        if [ "$READY_CHECK" -eq 0 ]; then
                             echo "✅ All nodes are Ready!"
                             ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
                               "KUBECONFIG=/home/vboxuser/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes -o wide"
-                            exit 0
+                            exit 0      # ← VERY IMPORTANT (SUCCESS)
                         fi
 
-                        echo "⏳ Nodes not ready yet... waiting..."
+                        echo "⏳ Not ready... retrying..."
                         sleep 10
                         RETRY=$((RETRY+1))
-
                     done
 
-                    echo "❌ Nodes did not become ready within 3 minutes!"
+                    echo "❌ Nodes did NOT become Ready in time!"
                     exit 1
                 '''
             }
