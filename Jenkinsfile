@@ -3,69 +3,55 @@ pipeline {
 
     environment {
         ANSIBLE_HOST_KEY_CHECKING = 'False'
+        KUBECONFIG = "/var/lib/jenkins/workspace/rke2-pipeline/kubeconfig"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/greeshu12/rke2-ansible.git'
+                git url: 'https://github.com/greeshu12/rke2-ansible.git', branch: 'main', credentialsId: 'ansible-ssh-key'
             }
         }
 
-        stage('Uninstall Existing RKE2') {
+        stage('Uninstall Old RKE2') {
             steps {
-                ansiblePlaybook(
-                    playbook: 'uninstall-rke2.yml',
-                    inventory: 'inventory.ini',
-                    credentialsId: 'ansible-ssh-key',
-                    become: true,
-                    sudoUser: 'root'
-                )
+                sh 'ansible-playbook -i inventory.ini uninstall-rke2.yml || true'
             }
         }
 
         stage('Install RKE2 Server + Agent') {
             steps {
-                ansiblePlaybook(
-                    playbook: 'install-rke2.yml',
-                    inventory: 'inventory.ini',
-                    credentialsId: 'ansible-ssh-key',
-                    become: true,
-                    sudoUser: 'root'
-                )
+                sh 'ansible-playbook -i inventory.ini install-rke2.yml'
             }
         }
 
-        stage('Wait For Nodes Ready') {
+        stage('Wait for Nodes to Become Ready') {
+            steps {
+                script {
+                    echo "⏳ Waiting for master and worker to become Ready (max 2 minutes)..."
+
+                    retry(12) {      // 12 retries × 10 sec = 2 minutes
+                        sleep 10
+                        sh '''
+                        export KUBECONFIG=/var/lib/jenkins/workspace/rke2-pipeline/kubeconfig
+                        READY=$(kubectl get nodes --no-headers | grep -c " Ready")
+                        if [ "$READY" -lt 2 ]; then
+                            echo "Nodes not ready yet..."
+                            exit 1
+                        fi
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Show Final Cluster Status') {
             steps {
                 sh '''
-                    echo "⏳ Waiting for nodes to be Ready..."
-
-                    MAX_RETRIES=18     # 3 minutes
-                    RETRY=0
-
-                    while [ $RETRY -lt $MAX_RETRIES ]; do
-
-                        READY_CHECK=$(ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
-                          "KUBECONFIG=/home/vboxuser/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes --no-headers" \
-                          | awk '{print $2}' | grep -cv Ready)
-
-                        if [ "$READY_CHECK" -eq 0 ]; then
-                            echo "✅ All nodes are Ready!"
-                            ssh -o StrictHostKeyChecking=no vboxuser@10.91.9.235 \
-                              "KUBECONFIG=/home/vboxuser/.kube/config /var/lib/rancher/rke2/bin/kubectl get nodes -o wide"
-                            exit 0      # ← VERY IMPORTANT (SUCCESS)
-                        fi
-
-                        echo "⏳ Not ready... retrying..."
-                        sleep 10
-                        RETRY=$((RETRY+1))
-                    done
-
-                    echo "❌ Nodes did NOT become Ready in time!"
-                    exit 1
+                export KUBECONFIG=/var/lib/jenkins/workspace/rke2-pipeline/kubeconfig
+                echo "🎉 FINAL CLUSTER STATUS:"
+                kubectl get nodes -o wide
                 '''
             }
         }
