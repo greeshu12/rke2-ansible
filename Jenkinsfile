@@ -37,10 +37,7 @@ pipeline {
                     -u vboxuser --private-key /var/lib/jenkins/.ssh/id_rsa -b
 
                 sed -i 's/127.0.0.1/10.91.9.235/g' kubeconfig
-
-                # Fix permissions so Jenkins can read it
-                sudo chown jenkins:jenkins kubeconfig
-                sudo chmod 600 kubeconfig
+                chmod 600 kubeconfig
                 '''
             }
         }
