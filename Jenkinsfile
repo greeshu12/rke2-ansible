@@ -4,13 +4,16 @@ pipeline {
     environment {
         ANSIBLE_HOST_KEY_CHECKING = 'False'
         KUBECONFIG = "kubeconfig"
+        PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git url: 'https://github.com/greeshu12/rke2-ansible.git', branch: 'main', credentialsId: 'ansible-ssh-key'
+                git url: 'https://github.com/greeshu12/rke2-ansible.git', 
+                    branch: 'main', 
+                    credentialsId: 'ansible-ssh-key'
             }
         }
 
@@ -34,6 +37,10 @@ pipeline {
                     -u vboxuser --private-key /var/lib/jenkins/.ssh/id_rsa -b
 
                 sed -i 's/127.0.0.1/10.91.9.235/g' kubeconfig
+
+                # Fix permissions so Jenkins can read it
+                sudo chown jenkins:jenkins kubeconfig
+                sudo chmod 600 kubeconfig
                 '''
             }
         }
@@ -46,8 +53,10 @@ pipeline {
                     retry(12) {
                         sleep 10
                         sh '''
-                        export PATH=$PATH:/usr/local/bin
                         export KUBECONFIG=kubeconfig
+
+                        echo "Checking nodes..."
+                        kubectl get nodes --no-headers || true
 
                         READY_COUNT=$(kubectl get nodes --no-headers | grep -c " Ready")
 
@@ -64,7 +73,6 @@ pipeline {
         stage('Show Final Cluster Status') {
             steps {
                 sh '''
-                export PATH=$PATH:/usr/local/bin
                 export KUBECONFIG=kubeconfig
 
                 echo "🎉 FINAL CLUSTER STATUS:"
