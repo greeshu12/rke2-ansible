@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         ANSIBLE_HOST_KEY_CHECKING = 'False'
-        KUBECONFIG = "/var/lib/jenkins/workspace/rke2-pipeline/kubeconfig"
+        KUBECONFIG = "kubeconfig"
     }
 
     stages {
@@ -20,23 +20,35 @@ pipeline {
             }
         }
 
-        stage('Install RKE2 Server + Agent') {
+        stage('Install RKE2 Server + Worker') {
             steps {
                 sh 'ansible-playbook -i inventory.ini install-rke2.yml'
             }
         }
 
-        stage('Wait for Nodes to Become Ready') {
+        stage('Fetch Kubeconfig from Master') {
+            steps {
+                sh '''
+                ansible master1 -i inventory.ini -m fetch \
+                    -a "src=/etc/rancher/rke2/rke2.yaml dest=kubeconfig flat=yes" \
+                    -u vboxuser --private-key /var/lib/jenkins/.ssh/id_rsa -b
+
+                sed -i 's/127.0.0.1/10.91.9.235/g' kubeconfig
+                '''
+            }
+        }
+
+        stage('Wait for Nodes Ready') {
             steps {
                 script {
-                    echo "⏳ Waiting for master and worker to become Ready (max 2 minutes)..."
+                    echo "⏳ Waiting for nodes to become Ready..."
 
-                    retry(12) {      // 12 retries × 10 sec = 2 minutes
+                    retry(12) {
                         sleep 10
                         sh '''
-                        export KUBECONFIG=/var/lib/jenkins/workspace/rke2-pipeline/kubeconfig
-                        READY=$(kubectl get nodes --no-headers | grep -c " Ready")
-                        if [ "$READY" -lt 2 ]; then
+                        export KUBECONFIG=kubeconfig
+                        READY_COUNT=$(kubectl get nodes --no-headers | grep -c " Ready")
+                        if [ "$READY_COUNT" -lt 2 ]; then
                             echo "Nodes not ready yet..."
                             exit 1
                         fi
@@ -49,7 +61,7 @@ pipeline {
         stage('Show Final Cluster Status') {
             steps {
                 sh '''
-                export KUBECONFIG=/var/lib/jenkins/workspace/rke2-pipeline/kubeconfig
+                export KUBECONFIG=kubeconfig
                 echo "🎉 FINAL CLUSTER STATUS:"
                 kubectl get nodes -o wide
                 '''
