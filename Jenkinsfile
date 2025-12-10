@@ -46,8 +46,11 @@ pipeline {
                     retry(12) {
                         sleep 10
                         sh '''
+                        export PATH=$PATH:/usr/local/bin
                         export KUBECONFIG=kubeconfig
+
                         READY_COUNT=$(kubectl get nodes --no-headers | grep -c " Ready")
+
                         if [ "$READY_COUNT" -lt 2 ]; then
                             echo "Nodes not ready yet..."
                             exit 1
@@ -61,7 +64,9 @@ pipeline {
         stage('Show Final Cluster Status') {
             steps {
                 sh '''
+                export PATH=$PATH:/usr/local/bin
                 export KUBECONFIG=kubeconfig
+
                 echo "🎉 FINAL CLUSTER STATUS:"
                 kubectl get nodes -o wide
                 '''
